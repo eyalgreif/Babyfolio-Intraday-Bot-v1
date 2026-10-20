@@ -1,5 +1,12 @@
+import sys
+from pathlib import Path
+
 import pandas as pd
-from bot import summarize, backtest
+
+# Ensure the repository root is importable when pytest runs in CI.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from bot import summarize, backtest  # noqa: E402
 
 
 def test_summary_empty():
