@@ -138,3 +138,21 @@ def test_load_ibkr_csv_pair(tmp_path):
     assert len(days) == 2
     assert bars.index.tz is not None
     assert metadata["provider"] == "csv"
+
+
+def test_ibkr_bar_normalization_uses_utc_intraday_and_et_daily():
+    from download_ibkr import normalize_ibkr_bars
+
+    raw_intra = pd.DataFrame({
+        "date": [pd.Timestamp("2026-01-05T14:30:00Z")],
+        "open": [100], "high": [101], "low": [99], "close": [100.5], "volume": [1000],
+    })
+    intra = normalize_ibkr_bars(raw_intra, daily=False)
+    assert str(intra.iloc[0]["timestamp"].tz) == "UTC"
+
+    raw_daily = pd.DataFrame({
+        "date": ["20260105"], "open": [100], "high": [101],
+        "low": [99], "close": [100.5], "volume": [100000],
+    })
+    daily = normalize_ibkr_bars(raw_daily, daily=True)
+    assert daily.iloc[0]["timestamp"] == pd.Timestamp("2026-01-05")
