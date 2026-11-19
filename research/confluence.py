@@ -175,14 +175,28 @@ def run_one_strategy(d, ticker, signal, reward_r=0.7, stop_atr_buffer=0.10,
         traded_days.add(session)
     return trades
 
+def wilson_interval(wins: int, total: int, z: float = 1.96):
+    """95% Wilson score interval for a binomial win rate."""
+    if total <= 0:
+        return None, None
+    p = wins / total
+    denominator = 1 + z * z / total
+    center = (p + z * z / (2 * total)) / denominator
+    radius = z * np.sqrt(p * (1 - p) / total + z * z / (4 * total * total)) / denominator
+    return max(0.0, center - radius), min(1.0, center + radius)
+
+
 def summarize_trades(trades):
     if not trades:
-        return {"trades": 0, "win_rate_pct": None, "expectancy_bps": None,
-                "profit_factor": None, "avg_win_bps": None, "avg_loss_bps": None,
+        return {"trades": 0, "win_rate_pct": None,
+                "win_rate_ci95_low_pct": None, "win_rate_ci95_high_pct": None,
+                "expectancy_bps": None, "profit_factor": None,
+                "avg_win_bps": None, "avg_loss_bps": None,
                 "max_loss_streak": 0, "max_drawdown_bps": None}
     x = pd.DataFrame(trades)
     net = x["net_bps"].astype(float)
     wins, losses = net[net > 0], net[net < 0]
+    ci_low, ci_high = wilson_interval(int((net > 0).sum()), int(len(net)))
     gp, gl = float(wins.sum()), float(-losses.sum())
     streak = max_streak = 0
     for is_win in net > 0:
@@ -192,6 +206,8 @@ def summarize_trades(trades):
     dd = equity - equity.cummax().clip(lower=0)
     return {
         "trades": int(len(x)), "win_rate_pct": round(float((net > 0).mean() * 100), 2),
+        "win_rate_ci95_low_pct": round(ci_low * 100, 2),
+        "win_rate_ci95_high_pct": round(ci_high * 100, 2),
         "expectancy_bps": round(float(net.mean()), 3),
         "profit_factor": round(gp / gl, 3) if gl > 0 else None,
         "avg_win_bps": round(float(wins.mean()), 3) if len(wins) else None,
@@ -302,17 +318,40 @@ def write_report(report, out_dir="reports"):
         frame.to_csv(out / "confluence_summary.csv", index=False)
     if not periods.empty:
         periods.to_csv(out / "confluence_period_summary.csv", index=False)
+    providers = report["provider"]
+    feed_label = report["feed"] if "alpaca" in providers or "csv" in providers else "not applicable"
     lines = ["# Intraday Confluence Research", "",
              f"Requested range: {report['start_date']} to {report['end_date']}",
-             f"Provider(s): {', '.join(report['provider']) or 'none'}",
-             f"Feed: {report['feed']}", "",
+             f"Provider(s): {', '.join(providers) or 'none'}",
+             f"Feed: {feed_label}", "",
              f"> {report['disclaimer']}", "", "## Data coverage", ""]
+    coverage_warnings = []
+    requested_start = pd.Timestamp(report["start_date"]).date()
+    requested_end = pd.Timestamp(report["end_date"]).date()
     for ticker, metadata in report["data_metadata"].items():
+        actual_first = pd.Timestamp(metadata["intraday_first"]).date() if metadata["intraday_first"] else None
+        actual_last = pd.Timestamp(metadata["intraday_last"]).date() if metadata["intraday_last"] else None
         lines.append(
             f"- **{ticker}:** {metadata['intraday_bars']:,} intraday bars "
             f"({metadata['intraday_first']} to {metadata['intraday_last']}); "
             f"{metadata['daily_bars']:,} daily bars; provider={metadata['provider']}, feed={metadata['feed']}"
         )
+        if actual_first is None or actual_last is None:
+            coverage_warnings.append(f"{ticker}: no intraday data was returned.")
+        else:
+            if (actual_first - requested_start).days > 7:
+                coverage_warnings.append(
+                    f"{ticker}: requested start {requested_start}, but actual intraday history starts {actual_first}."
+                )
+            if (requested_end - actual_last).days > 7:
+                coverage_warnings.append(
+                    f"{ticker}: requested end {requested_end}, but actual intraday history ends {actual_last}."
+                )
+    if coverage_warnings:
+        lines += ["", "## Coverage warning", "",
+                  "**The returned data does not cover the full requested range. "
+                  "Calendar-period rows with zero trades in uncovered periods mean no data, not zero signals.**", ""]
+        lines += [f"- {warning}" for warning in coverage_warnings]
     lines += ["", "## Aggregate strategy results", ""]
     lines.append(frame.to_markdown(index=False) if not frame.empty else "No strategies returned trades.")
     lines += ["", "## Calendar-period diagnostics", "",
