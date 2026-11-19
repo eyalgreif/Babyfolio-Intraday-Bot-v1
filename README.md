@@ -41,14 +41,19 @@ The workflow detects these secrets and uses Alpaca automatically; without them i
 to the short Yahoo Finance sample. Secrets are read from the environment and are never written
 to the repository or report.
 
-The default `iex` feed is free but covers IEX only (about 2.5% of US equity volume according
-to Alpaca's docs). It is suitable only for an initial price/volume proxy check, not a proper
-consolidated-market volume or order-flow study. `sip` covers all US exchanges but requires
-an appropriate Alpaca market-data subscription. Do not pay for SIP before the free pilot and
-strategy research justify it.
+For this historical backtest, the default is now **`sip`**, not `iex`. Alpaca's Market Data FAQ
+states that historical SIP queries can be made on the Basic plan when the requested end time
+is at least 15 minutes old; the free plan's real-time feed remains IEX-only. Our research job
+requests completed historical bars, so it should use the consolidated SIP feed without paying
+for live SIP access. Verify the account's entitlement with the first run; if Alpaca rejects the
+SIP request, use the IBKR CSV route below. Do not subscribe to the $99/month plan just for this
+first historical research pass.
+
+Sources: [Alpaca Market Data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq) and
+[Historical Bars API](https://docs.alpaca.markets/us/reference/stockbars).
 
 Run manually or locally:
-`python research/confluence.py --provider alpaca --feed iex --start-date 2016-01-01 --tickers SPY QQQ IWM`
+`python research/confluence.py --provider alpaca --feed sip --start-date 2016-01-01 --tickers SPY QQQ IWM`
 
 The report records per-symbol date coverage and chronological diagnostics:
 2016–2021 development, 2022–2024 validation, 2025–2026-08-26 historical holdout,
