@@ -39,7 +39,7 @@ def fetch_alpaca_bars(
     timeframe: str,
     start: str,
     end: str,
-    feed: str = "iex",
+    feed: str = "sip",
     api_key: str | None = None,
     secret_key: str | None = None,
     session: requests.Session | None = None,
@@ -99,7 +99,7 @@ def download_alpaca_symbol(
     symbol: str,
     start: str,
     end: str,
-    feed: str = "iex",
+    feed: str = "sip",
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     """Download 5-minute bars plus daily regime history for the same feed."""
     start_dt = datetime.fromisoformat(start).date()
