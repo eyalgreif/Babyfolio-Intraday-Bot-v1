@@ -282,7 +282,7 @@ def run_research(tickers, intraday_period="60d", provider="auto",
             errors[ticker] = f"{type(exc).__name__}: {exc}"
     providers = sorted({m["provider"] for m in data_metadata.values()})
     return {
-        "disclaimer": "Research only. Yahoo 5-minute data is a short exploratory sample. Alpaca IEX is a single-venue feed (~2.5% of US equity volume), not consolidated SIP. No true order-book OFI data. Signals fill next bar open; stop wins if both stop and target are touched.",
+        "disclaimer": "Research only. Yahoo 5-minute data is a short exploratory sample. Alpaca SIP is consolidated historical trade data; Alpaca IEX is single-venue only (~2.5% of US equity volume). No true order-book OFI data. Signals fill next bar open; stop wins if both stop and target are touched.",
         "provider": providers, "intraday_period": intraday_period,
         "start_date": start_date, "end_date": end_date, "feed": feed,
         "tickers": tickers, "data_metadata": data_metadata,
@@ -325,7 +325,7 @@ def write_report(report, out_dir="reports"):
               "- The 2016-2021 / 2022-2024 / 2025-2026 splits are chronological diagnostics; strategy rules were not preregistered before this project, so they are not a substitute for a fresh prospective holdout.",
               "- Compare base, stress, and severe cost scenarios.",
               "- No promotion without walk-forward evaluation and a frozen forward paper-trading holdout.",
-              "- Relative volume on Alpaca IEX is an IEX-only bar-volume proxy, not consolidated market volume or true order-flow imbalance.",
+              "- Relative volume is a bar-volume proxy, not true order-flow imbalance. On Alpaca IEX it covers IEX prints only; on SIP it uses consolidated trade volume.",
               "- OHLC bars cannot resolve intrabar ordering; stop-first is the conservative assumption.", ""]
     (out / "confluence_report.md").write_text("\n".join(lines), encoding="utf-8")
 
