@@ -52,7 +52,7 @@ It uses `ib_async` and writes the CSV files locally; it does not place or modify
 4. Run:
 
 ```bash
-python research/download_ibkr.py --port 7497 --start-date 2016-01-01 --symbols SPY QQQ IWM
+python research/download_ibkr.py --port 7497 --start-date 2016-01-01 --symbols SPY
 ```
 
 For IB Gateway, use the port configured in Gateway instead of assuming the TWS defaults.
