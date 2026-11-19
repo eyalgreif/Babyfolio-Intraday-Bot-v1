@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "research"))
 import numpy as np
 import pandas as pd
 
-from confluence import normalize_bars, summarize_trades, run_one_strategy, add_daily_regime
+from confluence import wilson_interval, normalize_bars, summarize_trades, run_one_strategy, add_daily_regime
 
 
 def make_bars(n=40):
@@ -78,3 +78,9 @@ def test_regime_uses_prior_completed_daily_bar():
     out = add_daily_regime(intra, daily)
     assert bool(out.iloc[0]["bull_regime"]) is True
     assert bool(out.iloc[1]["bull_regime"]) is False
+
+
+def test_wilson_interval_is_wide_for_small_samples():
+    low, high = wilson_interval(14, 21)
+    assert round(low * 100, 2) == 45.37
+    assert round(high * 100, 2) == 82.81
