@@ -1,9 +1,12 @@
 """Confluence-based intraday research engine. Research only; never submits orders."""
 from __future__ import annotations
-import argparse, json
+import argparse, json, os
+from datetime import date
 from pathlib import Path
 import numpy as np
 import pandas as pd
+
+from data_provider import download_alpaca_symbol
 
 NY = "America/New_York"
 DEFAULT_TICKERS = ["SPY", "QQQ", "IWM"]
@@ -98,7 +101,7 @@ def make_signals(d):
     bullish_close = (d["close"] > d["open"]) & (d["close_location"] >= 0.65)
     base = d["bull_regime"] & stretched & reclaim & bullish_close
     rvol = d["rvol"] >= 1.10
-    rsi_recovery = d["rsi2"].shift(1) <= 35
+    rsi_recovery = (d["rsi2"].shift(1) <= 35) & (d["rsi2"] > 35)
     trend_pullback = (d["bull_regime"] & (d["ema8"] > d["ema21"])
                       & (d["low"].shift(1) <= d["ema8"].shift(1))
                       & (d["close"] > d["ema8"]) & bullish_close & rvol)
@@ -198,7 +201,21 @@ def summarize_trades(trades):
         "stop_exit_pct": round(float(x["exit_reason"].isin(["stop", "stop_gap"]).mean() * 100), 2),
     }
 
-def download_data(ticker, intraday_period="60d"):
+def download_data(ticker, provider="auto", intraday_period="60d",
+                  start_date="2016-01-01", end_date=None, feed="iex"):
+    end_date = end_date or date.today().isoformat()
+    alpaca_key = os.getenv("APCA_API_KEY_ID")
+    alpaca_secret = os.getenv("APCA_API_SECRET_KEY")
+    selected = provider
+    if selected == "auto":
+        selected = "alpaca" if alpaca_key and alpaca_secret else "yahoo"
+    if selected == "alpaca":
+        intra, daily, metadata = download_alpaca_symbol(
+            ticker, start=start_date, end=end_date, feed=feed
+        )
+        return normalize_bars(intra), _flatten_columns(daily), metadata
+    if selected != "yahoo":
+        raise ValueError("provider must be auto, alpaca, or yahoo")
     import yfinance as yf
     intra = yf.download(ticker, period=intraday_period, interval="5m", auto_adjust=False,
                         progress=False, threads=False)
@@ -206,13 +223,30 @@ def download_data(ticker, intraday_period="60d"):
                         progress=False, threads=False)
     if intra.empty or daily.empty:
         raise RuntimeError(f"No data returned for {ticker} (intraday={len(intra)}, daily={len(daily)})")
-    return normalize_bars(intra), _flatten_columns(daily)
+    intra = normalize_bars(intra)
+    daily = _flatten_columns(daily)
+    metadata = {
+        "provider": "yahoo", "feed": "Yahoo Finance",
+        "start_requested": intraday_period, "end_requested": end_date,
+        "intraday_bars": int(len(intra)), "daily_bars": int(len(daily)),
+        "intraday_first": intra.index.min().isoformat() if len(intra) else None,
+        "intraday_last": intra.index.max().isoformat() if len(intra) else None,
+        "daily_first": str(daily.index.min()) if len(daily) else None,
+        "daily_last": str(daily.index.max()) if len(daily) else None,
+    }
+    return intra, daily, metadata
 
-def run_research(tickers, intraday_period="60d"):
-    results, trades_by_key, errors = [], {}, {}
+def run_research(tickers, intraday_period="60d", provider="auto",
+                 start_date="2016-01-01", end_date=None, feed="iex"):
+    results, trades_by_key, errors, data_metadata = [], {}, {}, {}
+    end_date = end_date or date.today().isoformat()
     for ticker in tickers:
         try:
-            intra, daily = download_data(ticker, intraday_period)
+            intra, daily, metadata = download_data(
+                ticker, provider=provider, intraday_period=intraday_period,
+                start_date=start_date, end_date=end_date, feed=feed
+            )
+            data_metadata[ticker] = metadata
             features = add_features(intra, daily)
             for strategy, signal in make_signals(features).items():
                 for scenario, cost_bps in COST_SCENARIOS_BPS.items():
@@ -224,9 +258,12 @@ def run_research(tickers, intraday_period="60d"):
                                     **summarize_trades(trades)})
         except Exception as exc:
             errors[ticker] = f"{type(exc).__name__}: {exc}"
+    providers = sorted({m["provider"] for m in data_metadata.values()})
     return {
-        "disclaimer": "Exploratory 5-minute Yahoo Finance sample only; not validated for live trading. No true order-book OFI data. Signals fill next bar open; stop wins if stop and target are both touched.",
-        "intraday_period": intraday_period, "tickers": tickers,
+        "disclaimer": "Research only. Yahoo 5-minute data is a short exploratory sample. Alpaca IEX is a single-venue feed (~2.5% of US equity volume), not consolidated SIP. No true order-book OFI data. Signals fill next bar open; stop wins if both stop and target are touched.",
+        "provider": providers, "intraday_period": intraday_period,
+        "start_date": start_date, "end_date": end_date, "feed": feed,
+        "tickers": tickers, "data_metadata": data_metadata,
         "cost_scenarios_bps_round_trip": COST_SCENARIOS_BPS,
         "results": results, "trades": trades_by_key, "errors": errors,
     }
@@ -255,10 +292,17 @@ def write_report(report, out_dir="reports"):
 
 def main():
     parser = argparse.ArgumentParser(description="Research-only confluence intraday backtest")
-    parser.add_argument("--period", default="60d")
+    parser.add_argument("--provider", choices=["auto", "yahoo", "alpaca"], default="auto")
+    parser.add_argument("--period", default="60d", help="Yahoo intraday period")
+    parser.add_argument("--start-date", default="2016-01-01", help="Alpaca history start (YYYY-MM-DD)")
+    parser.add_argument("--end-date", default=None, help="Alpaca history end (YYYY-MM-DD; defaults to today)")
+    parser.add_argument("--feed", choices=["iex", "sip"], default=os.getenv("ALPACA_DATA_FEED", "iex"))
     parser.add_argument("--tickers", nargs="*", default=DEFAULT_TICKERS)
     args = parser.parse_args()
-    report = run_research(args.tickers, args.period)
+    report = run_research(
+        args.tickers, args.period, provider=args.provider,
+        start_date=args.start_date, end_date=args.end_date, feed=args.feed
+    )
     write_report(report)
     for row in report["results"]:
         print(row)
