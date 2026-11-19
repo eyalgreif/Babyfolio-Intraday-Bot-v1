@@ -241,7 +241,7 @@ def download_data(ticker, provider="auto", intraday_period="60d",
     return intra, daily, metadata
 
 def run_research(tickers, intraday_period="60d", provider="auto",
-                 start_date="2016-01-01", end_date=None, feed="iex",
+                 start_date="2016-01-01", end_date=None, feed="sip",
                  data_dir="data/market"):
     results, trades_by_key, errors, data_metadata = [], {}, {}, {}
     period_results = []
