@@ -120,3 +120,56 @@ def download_alpaca_symbol(
         "daily_last": daily.index.max().isoformat() if len(daily) else None,
     }
     return intra, daily, metadata
+
+
+def load_csv_symbol(symbol: str, data_dir: str = "data/market") -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """Load IBKR/TWS-exported 5-minute and daily OHLCV CSV files.
+
+    Expected files: {symbol}_5m.csv and {symbol}_1d.csv.
+    Each file must contain timestamp, open, high, low, close, volume columns.
+    Timestamps may be timezone-aware or naive; naive timestamps are treated as America/New_York.
+    """
+    from pathlib import Path
+    root = Path(data_dir)
+    intraday_path = root / f"{symbol.upper()}_5m.csv"
+    daily_path = root / f"{symbol.upper()}_1d.csv"
+
+    def read_file(path: Path) -> pd.DataFrame:
+        if not path.exists():
+            raise FileNotFoundError(f"Required IBKR CSV not found: {path}")
+        frame = pd.read_csv(path)
+        frame.columns = [str(c).strip().lower() for c in frame.columns]
+        required = {"timestamp", "open", "high", "low", "close", "volume"}
+        missing = required.difference(frame.columns)
+        if missing:
+            raise ValueError(f"{path} missing columns: {sorted(missing)}")
+        idx = pd.to_datetime(frame.pop("timestamp"), errors="coerce")
+        if idx.isna().any():
+            raise ValueError(f"{path} contains invalid timestamps")
+        if idx.dt.tz is None:
+            idx = idx.dt.tz_localize("America/New_York", ambiguous="infer", nonexistent="shift_forward")
+        else:
+            idx = idx.dt.tz_convert("America/New_York")
+        frame.index = pd.DatetimeIndex(idx)
+        frame = frame[["open", "high", "low", "close", "volume"]].apply(pd.to_numeric, errors="coerce")
+        frame = frame.dropna().sort_index()
+        return frame[~frame.index.duplicated(keep="last")]
+
+    intra = read_file(intraday_path)
+    daily = read_file(daily_path)
+    daily.index = daily.index.tz_localize(None).normalize()
+    metadata = {
+        "provider": "csv",
+        "feed": "local CSV (e.g. IBKR/TWS export)",
+        "start_requested": None,
+        "end_requested": None,
+        "intraday_bars": int(len(intra)),
+        "daily_bars": int(len(daily)),
+        "intraday_first": intra.index.min().isoformat() if len(intra) else None,
+        "intraday_last": intra.index.max().isoformat() if len(intra) else None,
+        "daily_first": daily.index.min().isoformat() if len(daily) else None,
+        "daily_last": daily.index.max().isoformat() if len(daily) else None,
+        "intraday_file": str(intraday_path),
+        "daily_file": str(daily_path),
+    }
+    return intra, daily, metadata
