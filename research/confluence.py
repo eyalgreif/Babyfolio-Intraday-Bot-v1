@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from data_provider import download_alpaca_symbol
+from data_provider import download_alpaca_symbol, load_csv_symbol
 
 NY = "America/New_York"
 DEFAULT_TICKERS = ["SPY", "QQQ", "IWM"]
@@ -202,7 +202,8 @@ def summarize_trades(trades):
     }
 
 def download_data(ticker, provider="auto", intraday_period="60d",
-                  start_date="2016-01-01", end_date=None, feed="iex"):
+                  start_date="2016-01-01", end_date=None, feed="iex",
+                  data_dir="data/market"):
     end_date = end_date or date.today().isoformat()
     alpaca_key = os.getenv("APCA_API_KEY_ID")
     alpaca_secret = os.getenv("APCA_API_SECRET_KEY")
@@ -214,8 +215,11 @@ def download_data(ticker, provider="auto", intraday_period="60d",
             ticker, start=start_date, end=end_date, feed=feed
         )
         return normalize_bars(intra), _flatten_columns(daily), metadata
+    if selected == "csv":
+        intra, daily, metadata = load_csv_symbol(ticker, data_dir=data_dir)
+        return normalize_bars(intra), _flatten_columns(daily), metadata
     if selected != "yahoo":
-        raise ValueError("provider must be auto, alpaca, or yahoo")
+        raise ValueError("provider must be auto, alpaca, yahoo, or csv")
     import yfinance as yf
     intra = yf.download(ticker, period=intraday_period, interval="5m", auto_adjust=False,
                         progress=False, threads=False)
@@ -237,7 +241,8 @@ def download_data(ticker, provider="auto", intraday_period="60d",
     return intra, daily, metadata
 
 def run_research(tickers, intraday_period="60d", provider="auto",
-                 start_date="2016-01-01", end_date=None, feed="iex"):
+                 start_date="2016-01-01", end_date=None, feed="iex",
+                 data_dir="data/market"):
     results, trades_by_key, errors, data_metadata = [], {}, {}, {}
     period_results = []
     end_date = end_date or date.today().isoformat()
@@ -251,7 +256,7 @@ def run_research(tickers, intraday_period="60d", provider="auto",
         try:
             intra, daily, metadata = download_data(
                 ticker, provider=provider, intraday_period=intraday_period,
-                start_date=start_date, end_date=end_date, feed=feed
+                start_date=start_date, end_date=end_date, feed=feed, data_dir=data_dir
             )
             data_metadata[ticker] = metadata
             features = add_features(intra, daily)
@@ -326,16 +331,17 @@ def write_report(report, out_dir="reports"):
 
 def main():
     parser = argparse.ArgumentParser(description="Research-only confluence intraday backtest")
-    parser.add_argument("--provider", choices=["auto", "yahoo", "alpaca"], default="auto")
+    parser.add_argument("--provider", choices=["auto", "yahoo", "alpaca", "csv"], default="auto")
     parser.add_argument("--period", default="60d", help="Yahoo intraday period")
     parser.add_argument("--start-date", default="2016-01-01", help="Alpaca history start (YYYY-MM-DD)")
     parser.add_argument("--end-date", default=None, help="Alpaca history end (YYYY-MM-DD; defaults to today)")
     parser.add_argument("--feed", choices=["iex", "sip"], default=os.getenv("ALPACA_DATA_FEED", "iex"))
+    parser.add_argument("--data-dir", default="data/market", help="Directory with SYMBOL_5m.csv and SYMBOL_1d.csv for --provider csv")
     parser.add_argument("--tickers", nargs="*", default=DEFAULT_TICKERS)
     args = parser.parse_args()
     report = run_research(
         args.tickers, args.period, provider=args.provider,
-        start_date=args.start_date, end_date=args.end_date, feed=args.feed
+        start_date=args.start_date, end_date=args.end_date, feed=args.feed, data_dir=args.data_dir
     )
     write_report(report)
     for row in report["results"]:
