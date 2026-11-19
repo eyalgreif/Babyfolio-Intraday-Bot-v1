@@ -202,7 +202,7 @@ def summarize_trades(trades):
     }
 
 def download_data(ticker, provider="auto", intraday_period="60d",
-                  start_date="2016-01-01", end_date=None, feed="iex",
+                  start_date="2016-01-01", end_date=None, feed="sip",
                   data_dir="data/market"):
     end_date = end_date or date.today().isoformat()
     alpaca_key = os.getenv("APCA_API_KEY_ID")
@@ -335,7 +335,7 @@ def main():
     parser.add_argument("--period", default="60d", help="Yahoo intraday period")
     parser.add_argument("--start-date", default="2016-01-01", help="Alpaca history start (YYYY-MM-DD)")
     parser.add_argument("--end-date", default=None, help="Alpaca history end (YYYY-MM-DD; defaults to today)")
-    parser.add_argument("--feed", choices=["iex", "sip"], default=os.getenv("ALPACA_DATA_FEED", "iex"))
+    parser.add_argument("--feed", choices=["iex", "sip"], default=os.getenv("ALPACA_DATA_FEED", "sip"))
     parser.add_argument("--data-dir", default="data/market", help="Directory with SYMBOL_5m.csv and SYMBOL_1d.csv for --provider csv")
     parser.add_argument("--tickers", nargs="*", default=DEFAULT_TICKERS)
     args = parser.parse_args()
