@@ -39,3 +39,31 @@ market-data subscriptions. Historical data requests are subject to IBKR pacing
 and entitlement restrictions. See:
 - https://www.interactivebrokers.com/docs/tws-api/doc/md/historical-bars
 - https://www.interactivebrokers.com/support/faq/content/28236420
+
+
+## Recommended path: download directly through IBKR
+
+If you have TWS or IB Gateway installed, the repository also includes a read-only downloader.
+It uses `ib_async` and writes the CSV files locally; it does not place or modify orders.
+
+1. Install the optional dependency: `pip install -r requirements-ibkr.txt`.
+2. Open TWS or IB Gateway and enable API socket clients. Keep the API in read-only mode.
+3. Confirm the API port. Common TWS defaults are 7497 (paper) and 7496 (live); IB Gateway commonly uses 4002 (paper) and 4001 (live).
+4. Run:
+
+```bash
+python research/download_ibkr.py --port 7497 --start-date 2016-01-01 --symbols SPY QQQ IWM
+```
+
+For IB Gateway, use the port configured in Gateway instead of assuming the TWS defaults.
+The script connects with `readonly=True`, retrieves 5-minute TRADES bars for regular US
+market hours plus daily bars, and writes to `data/market/`. Then run:
+
+```bash
+python research/confluence.py --provider csv --data-dir data/market --tickers SPY QQQ IWM
+```
+
+IBKR historical API access requires the applicable market-data entitlements. The API may
+filter some trades that occur away from the NBBO, so its reported bar volume can be lower
+than an unfiltered exchange feed. Treat volume-derived confirmations as proxies and
+compare them to a consolidated source before promoting a volume-sensitive strategy.
