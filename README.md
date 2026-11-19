@@ -54,3 +54,17 @@ The report records per-symbol date coverage and chronological diagnostics:
 2016–2021 development, 2022–2024 validation, 2025–2026-08-26 historical holdout,
 and a separately labelled recent pilot window already inspected. These are useful
 diagnostics but **not a substitute for a pre-registered forward paper-trading holdout**.
+
+
+### Preferred data route if you already use IBKR
+
+The branch includes a read-only local downloader at `research/download_ibkr.py`. Install
+`requirements-ibkr.txt`, enable the TWS/IB Gateway API in read-only mode, then run:
+
+```bash
+python research/download_ibkr.py --port 7497 --start-date 2016-01-01 --symbols SPY QQQ IWM
+python research/confluence.py --provider csv --data-dir data/market --tickers SPY QQQ IWM
+```
+
+It stores licensed market data only in the locally git-ignored `data/market/` folder.
+See [research/IBKR_DATA.md](research/IBKR_DATA.md) for setup and entitlement notes.
