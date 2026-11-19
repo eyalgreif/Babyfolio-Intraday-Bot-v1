@@ -1,0 +1,52 @@
+name: Confluence research backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      period:
+        description: "Yahoo Finance intraday period (max availability is limited)"
+        required: true
+        default: "60d"
+      tickers:
+        description: "Space-separated tickers"
+        required: true
+        default: "SPY QQQ IWM"
+  push:
+    branches: [research-confluence-v1]
+    paths:
+      - "research/**"
+      - "tests/**"
+      - "requirements.txt"
+      - ".github/workflows/confluence.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Unit tests
+        run: pytest -q
+      - name: Run exploratory confluence backtest
+        env:
+          PERIOD: "60d"
+          TICKERS: "SPY QQQ IWM"
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          ALPACA_DATA_FEED: "sip"
+        run: python research/confluence.py --provider auto --period "$PERIOD" --start-date 2016-01-01 --feed "$ALPACA_DATA_FEED" --tickers $TICKERS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: confluence-research-report
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
