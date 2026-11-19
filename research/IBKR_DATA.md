@@ -35,8 +35,8 @@ data to this public repository; retain it locally and share only the derived
 summary/report if your data license permits it.
 
 For continuous history, use IBKR TWS API or Client Portal API with the appropriate
-market-data subscriptions. Historical data requests are subject to IBKR pacing
-and entitlement restrictions. See:
+market-data subscriptions. Historical data requests are subject to IBKR step-size,
+soft-throttling, and entitlement restrictions. See:
 - https://www.interactivebrokers.com/docs/tws-api/doc/md/historical-bars
 - https://www.interactivebrokers.com/support/faq/content/28236420
 
@@ -57,11 +57,17 @@ python research/download_ibkr.py --port 7497 --start-date 2016-01-01 --symbols S
 
 For IB Gateway, use the port configured in Gateway instead of assuming the TWS defaults.
 The script connects with `readonly=True`, retrieves 5-minute TRADES bars for regular US
-market hours plus daily bars, and writes to `data/market/`. Then run:
+market hours plus daily bars, and writes to `data/market/`. It pages 5-minute bars in
+one-week chunks and daily bars in one-year chunks to respect the documented IBKR step sizes.
+A 10-year, three-symbol download may require many requests; start with SPY, and increase
+`--request-delay` if IBKR throttles. Then run:
 
 ```bash
-python research/confluence.py --provider csv --data-dir data/market --tickers SPY QQQ IWM
+python research/confluence.py --provider csv --data-dir data/market --tickers SPY
 ```
+
+To research all three instruments, download all three first with `--symbols SPY QQQ IWM`,
+then pass `--tickers SPY QQQ IWM` to the research command.
 
 IBKR historical API access requires the applicable market-data entitlements. The API may
 filter some trades that occur away from the NBBO, so its reported bar volume can be lower
