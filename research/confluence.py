@@ -239,7 +239,14 @@ def download_data(ticker, provider="auto", intraday_period="60d",
 def run_research(tickers, intraday_period="60d", provider="auto",
                  start_date="2016-01-01", end_date=None, feed="iex"):
     results, trades_by_key, errors, data_metadata = [], {}, {}, {}
+    period_results = []
     end_date = end_date or date.today().isoformat()
+    splits = {
+        "development_2016_2021": ("2016-01-01", "2021-12-31"),
+        "validation_2022_2024": ("2022-01-01", "2024-12-31"),
+        "historical_holdout_2025_to_2026-08-26": ("2025-01-01", "2026-08-26"),
+        "recent_pilot_already_inspected": ("2026-08-27", "2099-12-31"),
+    }
     for ticker in tickers:
         try:
             intra, daily, metadata = download_data(
@@ -256,6 +263,16 @@ def run_research(tickers, intraday_period="60d", provider="auto",
                     results.append({"ticker": ticker, "strategy": strategy,
                                     "cost_scenario": scenario, "cost_bps": cost_bps,
                                     **summarize_trades(trades)})
+                    for split_name, (split_start, split_end) in splits.items():
+                        split_trades = [
+                            trade for trade in trades
+                            if split_start <= pd.Timestamp(trade["entry_time"]).date().isoformat() <= split_end
+                        ]
+                        period_results.append({
+                            "ticker": ticker, "strategy": strategy,
+                            "cost_scenario": scenario, "cost_bps": cost_bps,
+                            "period": split_name, **summarize_trades(split_trades)
+                        })
         except Exception as exc:
             errors[ticker] = f"{type(exc).__name__}: {exc}"
     providers = sorted({m["provider"] for m in data_metadata.values()})
@@ -265,7 +282,8 @@ def run_research(tickers, intraday_period="60d", provider="auto",
         "start_date": start_date, "end_date": end_date, "feed": feed,
         "tickers": tickers, "data_metadata": data_metadata,
         "cost_scenarios_bps_round_trip": COST_SCENARIOS_BPS,
-        "results": results, "trades": trades_by_key, "errors": errors,
+        "results": results, "period_results": period_results,
+        "trades": trades_by_key, "errors": errors,
     }
 
 def write_report(report, out_dir="reports"):
@@ -274,21 +292,37 @@ def write_report(report, out_dir="reports"):
     (out / "confluence_results.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     (out / "confluence_trades.json").write_text(json.dumps(report["trades"], indent=2), encoding="utf-8")
     frame = pd.DataFrame(report["results"])
+    periods = pd.DataFrame(report["period_results"])
     if not frame.empty:
         frame.to_csv(out / "confluence_summary.csv", index=False)
+    if not periods.empty:
+        periods.to_csv(out / "confluence_period_summary.csv", index=False)
     lines = ["# Intraday Confluence Research", "",
-             f"Sample requested: {report['intraday_period']}", "",
-             f"> {report['disclaimer']}", "", "## Summary", ""]
+             f"Requested range: {report['start_date']} to {report['end_date']}",
+             f"Provider(s): {', '.join(report['provider']) or 'none'}",
+             f"Feed: {report['feed']}", "",
+             f"> {report['disclaimer']}", "", "## Data coverage", ""]
+    for ticker, metadata in report["data_metadata"].items():
+        lines.append(
+            f"- **{ticker}:** {metadata['intraday_bars']:,} intraday bars "
+            f"({metadata['intraday_first']} to {metadata['intraday_last']}); "
+            f"{metadata['daily_bars']:,} daily bars; provider={metadata['provider']}, feed={metadata['feed']}"
+        )
+    lines += ["", "## Aggregate strategy results", ""]
     lines.append(frame.to_markdown(index=False) if not frame.empty else "No strategies returned trades.")
+    lines += ["", "## Calendar-period diagnostics", "",
+              "> The 2026-08-27 onward segment overlaps the initial 60-day pilot already inspected; it is descriptive, not a clean holdout.", ""]
+    lines.append(periods.to_markdown(index=False) if not periods.empty else "No period results.")
     if report["errors"]:
         lines += ["", "## Data errors", ""] + [f"- **{k}:** {v}" for k, v in report["errors"].items()]
     lines += ["", "## Interpretation guardrails", "",
-              "- Do not select a winner from this 60-day window.",
+              "- Do not select a winner from the recent 60-day pilot.",
+              "- The 2016-2021 / 2022-2024 / 2025-2026 splits are chronological diagnostics; strategy rules were not preregistered before this project, so they are not a substitute for a fresh prospective holdout.",
               "- Compare base, stress, and severe cost scenarios.",
-              "- No promotion without multi-year data, walk-forward evaluation, and a frozen holdout.",
-              "- Relative volume is a bar-volume proxy, not exchange-level order-flow imbalance.",
+              "- No promotion without walk-forward evaluation and a frozen forward paper-trading holdout.",
+              "- Relative volume on Alpaca IEX is an IEX-only bar-volume proxy, not consolidated market volume or true order-flow imbalance.",
               "- OHLC bars cannot resolve intrabar ordering; stop-first is the conservative assumption.", ""]
-    (out / "confluence_report.md").write_text("\\n".join(lines), encoding="utf-8")
+    (out / "confluence_report.md").write_text("\n".join(lines), encoding="utf-8")
 
 def main():
     parser = argparse.ArgumentParser(description="Research-only confluence intraday backtest")
