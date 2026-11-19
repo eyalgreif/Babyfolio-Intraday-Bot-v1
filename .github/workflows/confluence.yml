@@ -37,8 +37,8 @@ jobs:
         run: pytest -q
       - name: Run exploratory confluence backtest
         env:
-          PERIOD: \${{ inputs.period || '60d' }}
-          TICKERS: \${{ inputs.tickers || 'SPY QQQ IWM' }}
+          PERIOD: "60d"
+          TICKERS: "SPY QQQ IWM"
         run: python research/confluence.py --period "$PERIOD" --tickers $TICKERS
       - uses: actions/upload-artifact@v4
         if: always()
