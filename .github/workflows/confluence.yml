@@ -25,7 +25,7 @@ permissions:
 jobs:
   research:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,7 +39,10 @@ jobs:
         env:
           PERIOD: "60d"
           TICKERS: "SPY QQQ IWM"
-        run: python research/confluence.py --period "$PERIOD" --tickers $TICKERS
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          ALPACA_DATA_FEED: "iex"
+        run: python research/confluence.py --provider auto --period "$PERIOD" --start-date 2016-01-01 --feed "$ALPACA_DATA_FEED" --tickers $TICKERS
       - uses: actions/upload-artifact@v4
         if: always()
         with:
