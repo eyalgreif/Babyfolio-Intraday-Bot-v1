@@ -114,6 +114,7 @@ def test_alpaca_pagination_and_credentials_are_not_required_in_payload():
     assert len(bars) == 2
     assert bars.iloc[1]["close"] == 101.5
     assert fake.calls[0].get("page_token") is None
+    assert fake.calls[0]["feed"] == "sip"
     assert fake.calls[1]["page_token"] == "next"
 
 
