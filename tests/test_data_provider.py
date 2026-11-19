@@ -115,3 +115,26 @@ def test_alpaca_pagination_and_credentials_are_not_required_in_payload():
     assert bars.iloc[1]["close"] == 101.5
     assert fake.calls[0].get("page_token") is None
     assert fake.calls[1]["page_token"] == "next"
+
+
+def test_load_ibkr_csv_pair(tmp_path):
+    from data_provider import load_csv_symbol
+
+    intraday = pd.DataFrame({
+        "timestamp": ["2026-01-05 09:30:00", "2026-01-05 09:35:00"],
+        "open": [100.0, 100.5], "high": [101.0, 101.5],
+        "low": [99.5, 100.0], "close": [100.5, 101.0], "volume": [1000, 1200],
+    })
+    daily = pd.DataFrame({
+        "timestamp": ["2026-01-02", "2026-01-05"],
+        "open": [98.0, 99.0], "high": [100.0, 102.0],
+        "low": [97.0, 98.0], "close": [99.0, 101.0], "volume": [100000, 120000],
+    })
+    intraday.to_csv(tmp_path / "SPY_5m.csv", index=False)
+    daily.to_csv(tmp_path / "SPY_1d.csv", index=False)
+
+    bars, days, metadata = load_csv_symbol("SPY", data_dir=str(tmp_path))
+    assert len(bars) == 2
+    assert len(days) == 2
+    assert bars.index.tz is not None
+    assert metadata["provider"] == "csv"
