@@ -1,0 +1,122 @@
+"""Alpaca historical OHLCV data adapter.
+
+Credentials are read only from APCA_API_KEY_ID and APCA_API_SECRET_KEY.
+No credentials are written to disk or logged.
+"""
+from __future__ import annotations
+from datetime import date, datetime, timedelta, timezone
+import os
+import time
+from typing import Any
+
+import pandas as pd
+import requests
+
+BASE_URL = "https://data.alpaca.markets/v2/stocks/bars"
+
+
+def _parse_bars(payload: dict[str, Any], symbol: str) -> pd.DataFrame:
+    bars_by_symbol = payload.get("bars", {})
+    rows = bars_by_symbol.get(symbol, []) if isinstance(bars_by_symbol, dict) else []
+    if not rows:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    frame = pd.DataFrame(rows).rename(columns={
+        "o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"
+    })
+    required = ["t", "open", "high", "low", "close", "volume"]
+    missing = [column for column in required if column not in frame.columns]
+    if missing:
+        raise ValueError(f"Alpaca response missing fields: {missing}")
+    frame["timestamp"] = pd.to_datetime(frame["t"], utc=True)
+    frame = frame.set_index("timestamp")[["open", "high", "low", "close", "volume"]]
+    for col in ["open", "high", "low", "close", "volume"]:
+        frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    return frame.dropna().sort_index()
+
+
+def fetch_alpaca_bars(
+    symbol: str,
+    timeframe: str,
+    start: str,
+    end: str,
+    feed: str = "iex",
+    api_key: str | None = None,
+    secret_key: str | None = None,
+    session: requests.Session | None = None,
+) -> pd.DataFrame:
+    """Fetch all pages of historical bars for one symbol."""
+    key = api_key or os.getenv("APCA_API_KEY_ID")
+    secret = secret_key or os.getenv("APCA_API_SECRET_KEY")
+    if not key or not secret:
+        raise RuntimeError(
+            "Alpaca credentials missing. Set APCA_API_KEY_ID and APCA_API_SECRET_KEY "
+            "as environment variables or GitHub Actions secrets."
+        )
+    if feed not in {"iex", "sip"}:
+        raise ValueError("feed must be 'iex' or 'sip'")
+    client = session or requests.Session()
+    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+    params: dict[str, Any] = {
+        "symbols": symbol,
+        "timeframe": timeframe,
+        "start": start,
+        "end": end,
+        "limit": 10000,
+        "adjustment": "split",
+        "feed": feed,
+        "sort": "asc",
+    }
+    pages: list[pd.DataFrame] = []
+    page_count = 0
+    while True:
+        page_count += 1
+        if page_count > 500:
+            raise RuntimeError(f"Pagination safety stop for {symbol}: exceeded 500 pages")
+        response = client.get(BASE_URL, params=params, headers=headers, timeout=45)
+        if response.status_code == 429:
+            retry_after = float(response.headers.get("Retry-After", "2"))
+            time.sleep(min(max(retry_after, 1.0), 30.0))
+            continue
+        if not response.ok:
+            detail = response.text[:500].replace("\n", " ")
+            raise RuntimeError(f"Alpaca HTTP {response.status_code} for {symbol}/{feed}: {detail}")
+        payload = response.json()
+        frame = _parse_bars(payload, symbol)
+        if not frame.empty:
+            pages.append(frame)
+        token = payload.get("next_page_token")
+        if not token:
+            break
+        params["page_token"] = token
+    if not pages:
+        raise RuntimeError(f"Alpaca returned no {timeframe} bars for {symbol} ({start} to {end}, {feed})")
+    result = pd.concat(pages).sort_index()
+    result = result[~result.index.duplicated(keep="last")]
+    return result
+
+
+def download_alpaca_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    feed: str = "iex",
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """Download 5-minute bars plus daily regime history for the same feed."""
+    start_dt = datetime.fromisoformat(start).date()
+    daily_start = (start_dt - timedelta(days=180)).isoformat()
+    intra = fetch_alpaca_bars(symbol, "5Min", start, end, feed=feed)
+    daily = fetch_alpaca_bars(symbol, "1Day", daily_start, end, feed=feed)
+    daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
+    metadata = {
+        "provider": "alpaca",
+        "feed": feed,
+        "start_requested": start,
+        "end_requested": end,
+        "intraday_bars": int(len(intra)),
+        "daily_bars": int(len(daily)),
+        "intraday_first": intra.index.min().isoformat() if len(intra) else None,
+        "intraday_last": intra.index.max().isoformat() if len(intra) else None,
+        "daily_first": daily.index.min().isoformat() if len(daily) else None,
+        "daily_last": daily.index.max().isoformat() if len(daily) else None,
+    }
+    return intra, daily, metadata
