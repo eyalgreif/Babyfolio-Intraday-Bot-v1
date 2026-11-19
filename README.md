@@ -29,3 +29,28 @@ Important limitations:
 - No live trading or broker integration is included.
 
 Run locally: `pip install -r requirements.txt && pytest -q && python research/confluence.py`.
+
+## Multi-year data research
+
+The confluence branch supports Alpaca historical bars via `research/data_provider.py`.
+To enable it, create an Alpaca account/API key and add these **repository Actions secrets**:
+- `APCA_API_KEY_ID`
+- `APCA_API_SECRET_KEY`
+
+The workflow detects these secrets and uses Alpaca automatically; without them it falls back
+to the short Yahoo Finance sample. Secrets are read from the environment and are never written
+to the repository or report.
+
+The default `iex` feed is free but covers IEX only (about 2.5% of US equity volume according
+to Alpaca's docs). It is suitable only for an initial price/volume proxy check, not a proper
+consolidated-market volume or order-flow study. `sip` covers all US exchanges but requires
+an appropriate Alpaca market-data subscription. Do not pay for SIP before the free pilot and
+strategy research justify it.
+
+Run manually or locally:
+`python research/confluence.py --provider alpaca --feed iex --start-date 2016-01-01 --tickers SPY QQQ IWM`
+
+The report records per-symbol date coverage and chronological diagnostics:
+2016–2021 development, 2022–2024 validation, 2025–2026-08-26 historical holdout,
+and a separately labelled recent pilot window already inspected. These are useful
+diagnostics but **not a substitute for a pre-registered forward paper-trading holdout**.
